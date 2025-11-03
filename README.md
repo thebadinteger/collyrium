@@ -6,17 +6,17 @@
   <img src="https://img.shields.io/badge/dependencies-requests-green" alt="Deps"/>
 </p>
 
-##About:
+<h1>About:</h1>
 
 collyrium Is a tool for bruteforcing login credentials of RTSP and Web interfaces of IP cameras and other devices.
 
-##Features:
+<h1>Features:</h1>
 
 - Multithreading
 - Port and dictionary configuration
 - Credential bruteforcing for RTSP and Web Auth (Basic, Digest, Bearer)
 
-##Installation:
+<h1>Installation:</h1>
 
 ```bash
 git clone https://github.com/dansiup44/collyrium.git
@@ -24,7 +24,7 @@ cd collyrium
 pip install -r requirements.txt
 ```
 
-##Usage:
+<h1>Usage:</h1>
 
 ```bash
 python collyrium.py -i [input] -o [out] -t [threads]
@@ -37,6 +37,6 @@ python collyrium.py -i [input] -o [out] -t [threads]
 
 Output format: `[Type] login:password@ip:port`
 
-##Credits:
+<h1>Credits:</h1>
 
 Made by dansiup44 [GPL v3.0 License]
