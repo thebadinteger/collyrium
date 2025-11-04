@@ -31,7 +31,7 @@ python collyrium.py -i [input] -o [out] -t [threads]
 ```
 `-i [Path to the input file (Supports IP/Ranges/CIDR)]`
 
-`-o [Path to the output file (Can be written in existing files)`
+`-o [Path to the output file (Can be written in existing files)]`
 
 `-t [Threads number (Default=128)]`
 
