@@ -8,7 +8,7 @@
 
 <h1>About:</h1>
 
-<h3>collyrium Is a tool for bruteforcing login credentials for Web interfaces of IP cameras and other devices.</h4>
+<h3>collyrium Is a tool for bruteforcing login credentials for Web interfaces of IP cameras</h4>
 
 <h1>Features:</h1>
 
