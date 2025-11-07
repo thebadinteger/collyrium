@@ -47,7 +47,7 @@ python collyrium.py -i [input] -o [output] -t [threads]
 ```
 `-i [Path to the input file (Supports IP/IP:Port/Ranges/CIDR)]`
 
-`-o [Path to the output file (Can be written in existing files)]`
+`-o [Path to the output folder (Can be written in existing files)]`
 
 `-t [Threads number (Default=512)]`
 
