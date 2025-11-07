@@ -282,7 +282,7 @@ def main():
     if len(sys.argv) == 1 or '-?' in sys.argv:
         print("[?] collyrium - IP Cameras Web authentication bruteforce tool")
         print("-i [Path to the input file (Supports IP/IP:Port/Ranges/CIDR)]")
-        print("-o [Path to the output folder (If not exist, will be created)]")
+        print("-o [Path to the output folder]")
         print("-t [Threads number (Default=512)]")
         print("-? [Help]")
         return
@@ -292,7 +292,7 @@ def main():
     if not args.i or not args.o:
         print("[?] collyrium - IP Cameras Web authentication bruteforce tool")
         print("-i [Path to the input file (Supports IP/IP:Port/Ranges/CIDR)]")
-        print("-o [Path to the output folder (If not exist, will be created)]")
+        print("-o [Path to the output folder]")
         print("-t [Threads number (Default=512)]")
         print("-? [Help]")
         return
@@ -489,3 +489,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
