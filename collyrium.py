@@ -428,10 +428,8 @@ def main():
         log_error("No valid targets generated!")
         return
     
-    safe_print(f"[+] Parsed {parsed_count} lines successfully")
     if error_count > 0:
         safe_print(f"[!] Failed to parse {error_count} lines")
-    safe_print(f"[+] Generated {total_unique_ips} unique IP targets")
     
     target_iter = iter_targets(ip_port_map)
     os.makedirs(output_path, exist_ok=True)
@@ -547,3 +545,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
