@@ -129,6 +129,26 @@ def load_ports(filepath):
         ports.append(port)
     return ports
 
+def load_creds(filepath):
+    if not os.path.isfile(filepath):
+        log_error(f"{os.path.basename(filepath)} Not found!")
+        sys.exit(1)
+    with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
+        creds = []
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith('#'):
+                continue
+            if ':' in line:
+                parts = line.split(':', 1)
+                login = parts[0].strip()
+                password = parts[1].strip() if len(parts) > 1 else ''
+                creds.append((login, password))
+    if not creds:
+        log_error(f"{os.path.basename(filepath)} Is empty!")
+        sys.exit(1)
+    return creds
+
 def format_progress(scanned, found, total_ips, width=48):
     percent = int((scanned / total_ips) * 100) if total_ips else 0
     filled = int((scanned / total_ips) * width) if total_ips else 0
@@ -188,7 +208,7 @@ def try_cred(ip, port, auth_type, auth_path, login, password):
     except Exception:
         return None, None, None, None, False
 
-def process_target(ip, port, logins, passwords, output_path):
+def process_target(ip, port, creds, output_path):
     if stop_event.is_set():
         return False
         
@@ -218,12 +238,9 @@ def process_target(ip, port, logins, passwords, output_path):
     if auth_type is None or auth_path is None:
         return False
 
-    passwords_to_try = passwords + [''] if '' not in passwords else passwords
-    cred_pairs = list(itertools.product(logins, passwords_to_try))
-    
     cred_futs = []
     with ThreadPoolExecutor(max_workers=CRED_PARALLEL_WORKERS) as cred_pool:
-        for login, password in cred_pairs:
+        for login, password in creds:
             cred_futs.append(cred_pool.submit(try_cred, ip, port, auth_type, auth_path, login, password))
         
         found_cred = False
@@ -306,12 +323,10 @@ def main():
         return
     
     config_dir = os.path.join(os.path.dirname(__file__), "config")
-    login_file = os.path.join(config_dir, "login.cfg")
-    pass_file = os.path.join(config_dir, "pass.cfg")
+    creds_file = os.path.join(config_dir, "creds.cfg")
     ports_file = os.path.join(config_dir, "ports.cfg")
     
-    logins = load_list(login_file)
-    passwords = load_list(pass_file)
+    creds = load_creds(creds_file)
     ports = load_ports(ports_file)
     
     with open(input_path, 'r', encoding='utf-8', errors='ignore') as f:
@@ -439,7 +454,7 @@ def main():
     safe_print(f"[+] Input: {input_path}")
     safe_print(f"[+] Output: {output_path}")
     safe_print(f"[+] Threads: {threads}")
-    safe_print(f"[+] Credentials - {len(logins)}:{len(passwords)}")
+    safe_print(f"[+] Credentials - {len(creds)}")
     safe_print(f"[+] Hosts: {total_unique_ips}")
     print()
     
@@ -468,7 +483,7 @@ def main():
                 ip, port = next(target_iter)
             except StopIteration:
                 return False
-            fut = executor.submit(process_target, ip, port, logins, passwords, output_path)
+            fut = executor.submit(process_target, ip, port, creds, output_path)
             running.add(fut)
             fut_to_target[fut] = (ip, port)
             return True
@@ -545,4 +560,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
