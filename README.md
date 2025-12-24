@@ -8,7 +8,7 @@
 
 <h1>About:</h1>
 
-<h3>collyrium Is a tool for bruteforcing login credentials for Web interfaces of IP cameras</h4>
+<h3>collyrium Is a tool for bruteforcing credentials for Web interfaces of IP cameras</h4>
 
 <h1>Features:</h1>
 
@@ -26,18 +26,29 @@ cd collyrium
 pip install -r requirements.txt
 ```
 
+(for Windows just download collyrium_win.zip)
+
 <h1>Configuration:</h1>
 
 Configs are used in the following format:
 
+Credentials:
+
+```
+login:password
+login:password
+login:password
+```
+
+Ports:
+
 ```
 string
 string
 string
 ```
 
-- Logins: `config/login.cfg`
-- Passwords: `config/pass.cfg`
+- Credentials: `config/creds.cfg`
 - Ports: `config/ports.cfg`
 
 <h1>Usage:</h1>
