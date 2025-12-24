@@ -301,7 +301,12 @@ def main():
         log_error(f"Input file: {input_path} not found!")
         return
 
-    config_dir = os.path.join(os.path.dirname(__file__), "config")
+    if getattr(sys, 'frozen', False):
+        base_path = os.path.dirname(sys.executable)
+    else:
+        base_path = os.path.dirname(os.path.abspath(__file__))
+        
+    config_dir = os.path.join(base_path, "config")
     creds = load_creds(os.path.join(config_dir, "creds.cfg"))
     ports = load_ports(os.path.join(config_dir, "ports.cfg"))
 
