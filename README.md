@@ -68,4 +68,4 @@ Output format: `login:password@ip:port`
 
 <h1>Credits:</h1>
 
-Made by dansiup44 [GPL v3.0 License]
+Made by badinteger [GPL v3.0 License]
