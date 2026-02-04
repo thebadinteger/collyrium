@@ -2,7 +2,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/python-3.8%2B-blue" alt="Python"/>
-  <img src="https://img.shields.io/github/license/dansiup44/collyrium" alt="License"/>
+  <img src="https://img.shields.io/github/license/thebadinteger/collyrium" alt="License"/>
   <img src="https://img.shields.io/badge/dependencies-requests-green" alt="Deps"/>
 </p>
 
@@ -21,7 +21,7 @@
 <h1>Installation:</h1>
 
 ```bash
-git clone https://github.com/dansiup44/collyrium.git
+git clone https://github.com/thebadinteger/collyrium.git
 cd collyrium
 pip install -r requirements.txt
 ```
